@@ -430,6 +430,42 @@ a {
   color: var(--accent) !important;
 }
 
+.compare-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin: 0 0 14px;
+  padding: 0 2px;
+}
+
+.compare-toolbar span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.pool-row-select {
+  min-width: 0;
+}
+
+.pool-row-select .ant-select-selector {
+  height: 28px !important;
+  padding: 0 8px !important;
+  border-radius: 999px !important;
+  background: rgba(255, 255, 255, 0.78) !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+
+.pool-row-select .ant-select-selection-item {
+  line-height: 26px !important;
+  font-weight: 600;
+}
+
+.pool-row-select .ant-select-arrow {
+  inset-inline-end: 8px;
+}
+
 .expanded-plans {
   margin: 4px 8px 8px 72px;
   padding: 16px;
@@ -487,6 +523,29 @@ a {
   background: #f6f4ed;
 }
 
+.admin-workbench {
+  min-height: calc(100vh - 73px);
+  background: transparent;
+}
+
+.admin-sider {
+  padding: 24px 14px;
+  border-right: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.72) !important;
+  backdrop-filter: blur(18px);
+}
+
+.admin-sider .ant-menu {
+  border-inline-end: 0 !important;
+  background: transparent;
+}
+
+.admin-sider .ant-menu-item {
+  height: 46px;
+  border-radius: 16px;
+  font-weight: 700;
+}
+
 .admin-header {
   height: auto;
   padding: 18px clamp(18px, 4vw, 36px);
@@ -519,8 +578,15 @@ a {
 .table-toolbar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 16px;
   margin-bottom: 16px;
+}
+
+.package-fields-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .quota-list {
@@ -540,6 +606,7 @@ a {
 
 .quota-row {
   display: flex;
+  flex-wrap: wrap;
   width: 100%;
   margin-bottom: 6px;
 }
@@ -593,6 +660,11 @@ a {
     margin-top: 14px;
   }
 
+  .compare-toolbar {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
   .summary-strip {
     transform: none;
     margin: 24px;
@@ -602,5 +674,33 @@ a {
     align-items: flex-start;
     gap: 16px;
     flex-direction: column;
+  }
+
+  .admin-workbench {
+    display: block;
+  }
+
+  .admin-sider {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    padding: 12px 18px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .admin-sider .ant-menu {
+    display: flex;
+    gap: 8px;
+  }
+
+  .admin-sider .ant-menu-item {
+    flex: 1;
+    margin-inline: 0;
+    text-align: center;
+  }
+
+  .package-fields-grid {
+    grid-template-columns: 1fr;
   }
 }

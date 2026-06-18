@@ -22,6 +22,15 @@ export const PackageQuotaType = {
 
 export type PackageQuotaType = (typeof PackageQuotaType)[keyof typeof PackageQuotaType]
 
+export const PoolGroup = {
+  Pro: 1,
+  Plus: 2,
+  Team: 3,
+  Unknown: 4,
+} as const
+
+export type PoolGroup = (typeof PoolGroup)[keyof typeof PoolGroup]
+
 export type Site = {
   id: number
   name: string
@@ -34,18 +43,32 @@ export type Site = {
   updatedAt: string
 }
 
+export type RechargeRateRule = {
+  id?: number
+  multiplier: number
+  poolGroup: PoolGroup
+  poolGroupText?: string
+  isEnabled: boolean
+  effectiveUsd?: number
+  cnyPerUsd?: number
+}
+
 export type RechargePlan = {
   id: number
+  rateId?: number
   siteId: number
   siteName: string
   siteUrl: string
   cnyAmount: number
   usdCredit: number
   multiplier: number
+  poolGroup: PoolGroup
+  poolGroupText: string
   expireDays: number
   isEnabled: boolean
   effectiveUsd: number
   cnyPerUsd: number
+  rates: RechargeRateRule[]
   createdAt: string
   updatedAt: string
 }
@@ -67,6 +90,8 @@ export type PackagePlan = {
   priceCny: number
   durationDays: number
   multiplier: number
+  poolGroup: PoolGroup
+  poolGroupText: string
   isEnabled: boolean
   dailyPrice: number
   bestQuotaType?: PackageQuotaType

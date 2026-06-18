@@ -1,15 +1,21 @@
 import { ArrowRightOutlined, LoginOutlined, RiseOutlined } from '@ant-design/icons'
-import { Alert, Button, Empty, Skeleton, Table, Tabs, Tag } from 'antd'
+import { Alert, Button, Empty, Select, Skeleton, Table, Tabs, Tag } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useEffect, useState, type Key } from 'react'
 import { Link } from 'react-router-dom'
 import { apiClient } from '../services/api'
-import type { PackagePlan, RechargePlan } from '../types'
+import { PoolGroup, type PackagePlan, type RechargePlan, type RechargeRateRule } from '../types'
 import { cost, expireText, money, packageDurationText } from '../utils/format'
 
-type UsageGroup = RechargePlan & {
-  allPlans: RechargePlan[]
+type UsagePlanOption = RechargePlan & {
+  selectedRate: RechargeRateRule
+  selectedPoolGroup: PoolGroup
+}
+
+type UsageGroup = UsagePlanOption & {
+  allPlans: UsagePlanOption[]
   planCount: number
+  availablePoolGroups: PoolGroup[]
 }
 
 type PackageGroup = PackagePlan & {
@@ -73,6 +79,20 @@ const packageFormulaExamples: FormulaExample[] = [
   },
 ]
 
+const poolGroupFilterOptions = [
+  { value: PoolGroup.Pro, label: 'Pro' },
+  { value: PoolGroup.Plus, label: 'Plus' },
+  { value: PoolGroup.Team, label: 'Team' },
+  { value: PoolGroup.Unknown, label: '未知' },
+]
+
+function poolGroupColor(poolGroup: PoolGroup) {
+  if (poolGroup === PoolGroup.Pro) return 'green'
+  if (poolGroup === PoolGroup.Plus) return 'blue'
+  if (poolGroup === PoolGroup.Team) return 'gold'
+  return 'default'
+}
+
 function FormulaExamples({ examples }: { examples: FormulaExample[] }) {
   const [expanded, setExpanded] = useState(false)
   const visibleExamples = expanded ? examples : examples.slice(0, 1)
@@ -106,7 +126,85 @@ function compareUsagePlan(a: RechargePlan, b: RechargePlan) {
   return a.cnyAmount - b.cnyAmount
 }
 
-function groupUsageByBestPlan(items: RechargePlan[]): UsageGroup[] {
+function poolGroupText(poolGroup: PoolGroup) {
+  return poolGroupFilterOptions.find((item) => item.value === poolGroup)?.label ?? '未知'
+}
+
+function normalizeUsageRate(plan: RechargePlan, rate: RechargeRateRule): RechargeRateRule {
+  const effectiveUsd = rate.effectiveUsd ?? plan.usdCredit / rate.multiplier
+  const cnyPerUsd = rate.cnyPerUsd ?? plan.cnyAmount / effectiveUsd
+  return {
+    ...rate,
+    poolGroupText: rate.poolGroupText ?? poolGroupText(rate.poolGroup),
+    effectiveUsd,
+    cnyPerUsd,
+  }
+}
+
+function usageRateFallback(plan: RechargePlan): RechargeRateRule {
+  return normalizeUsageRate(plan, {
+    id: plan.rateId,
+    multiplier: plan.multiplier,
+    poolGroup: plan.poolGroup ?? PoolGroup.Plus,
+    poolGroupText: plan.poolGroupText,
+    isEnabled: plan.isEnabled,
+    effectiveUsd: plan.effectiveUsd,
+    cnyPerUsd: plan.cnyPerUsd,
+  })
+}
+
+function compareUsageRate(a: RechargeRateRule, b: RechargeRateRule) {
+  const costDiff = (a.cnyPerUsd ?? 999999) - (b.cnyPerUsd ?? 999999)
+  if (costDiff !== 0) return costDiff
+  return a.multiplier - b.multiplier
+}
+
+function usageRatesForPlan(plan: RechargePlan) {
+  return (plan.rates?.length ? plan.rates : [usageRateFallback(plan)])
+    .filter((rate) => rate.multiplier > 0)
+    .map((rate) => normalizeUsageRate(plan, rate))
+    .sort(compareUsageRate)
+}
+
+function toUsagePlanOption(plan: RechargePlan, selectedRate: RechargeRateRule): UsagePlanOption {
+  return {
+    ...plan,
+    rateId: selectedRate.id,
+    multiplier: selectedRate.multiplier,
+    poolGroup: selectedRate.poolGroup,
+    poolGroupText: selectedRate.poolGroupText ?? poolGroupText(selectedRate.poolGroup),
+    effectiveUsd: selectedRate.effectiveUsd ?? plan.effectiveUsd,
+    cnyPerUsd: selectedRate.cnyPerUsd ?? plan.cnyPerUsd,
+    selectedRate,
+    selectedPoolGroup: selectedRate.poolGroup,
+  }
+}
+
+function usagePlanOptionsForPool(plans: RechargePlan[], poolGroup: PoolGroup) {
+  return plans
+    .map((plan) => {
+      const rate = usageRatesForPlan(plan).find((item) => item.isEnabled && item.poolGroup === poolGroup)
+      return rate ? toUsagePlanOption(plan, rate) : undefined
+    })
+    .filter((item): item is UsagePlanOption => Boolean(item))
+    .sort(compareUsagePlan)
+}
+
+function usagePoolGroupsForPlans(plans: RechargePlan[]) {
+  const used = new Set<PoolGroup>()
+  plans.forEach((plan) => {
+    usageRatesForPlan(plan).forEach((rate) => {
+      if (rate.isEnabled) used.add(rate.poolGroup)
+    })
+  })
+  return poolGroupFilterOptions.map((item) => item.value).filter((value) => used.has(value))
+}
+
+function buildUsageSiteRows(
+  items: RechargePlan[],
+  topPoolGroup?: PoolGroup,
+  rowPoolGroups: Record<number, PoolGroup | undefined> = {},
+): UsageGroup[] {
   const map = new Map<number, RechargePlan[]>()
   items.forEach((item) => {
     map.set(item.siteId, [...(map.get(item.siteId) ?? []), item])
@@ -114,9 +212,44 @@ function groupUsageByBestPlan(items: RechargePlan[]): UsageGroup[] {
 
   return Array.from(map.values())
     .map((plans) => {
-      const sorted = [...plans].sort(compareUsagePlan)
-      return { ...sorted[0], allPlans: sorted, planCount: sorted.length }
+      const availablePoolGroups = usagePoolGroupsForPlans(plans)
+      const requestedPoolGroup = topPoolGroup ?? rowPoolGroups[plans[0].siteId]
+      const selectedPoolGroup = requestedPoolGroup && availablePoolGroups.includes(requestedPoolGroup)
+        ? requestedPoolGroup
+        : undefined
+
+      if (selectedPoolGroup) {
+        const allPlans = usagePlanOptionsForPool(plans, selectedPoolGroup)
+        const best = allPlans[0]
+        return best
+          ? {
+              ...best,
+              allPlans,
+              planCount: allPlans.length,
+              availablePoolGroups,
+              selectedPoolGroup,
+            }
+          : undefined
+      }
+
+      const candidates = plans
+        .flatMap((plan) => usageRatesForPlan(plan)
+          .filter((rate) => rate.isEnabled)
+          .map((rate) => toUsagePlanOption(plan, rate)))
+        .sort(compareUsagePlan)
+      const best = candidates[0]
+      if (!best) return undefined
+
+      const allPlans = usagePlanOptionsForPool(plans, best.poolGroup)
+      return {
+        ...best,
+        allPlans,
+        planCount: allPlans.length,
+        availablePoolGroups,
+        selectedPoolGroup: best.poolGroup,
+      }
     })
+    .filter((item): item is UsageGroup => Boolean(item))
     .sort(compareUsagePlan)
 }
 
@@ -139,6 +272,9 @@ export function PublicComparePage() {
   const [packages, setPackages] = useState<PackagePlan[]>([])
   const [expandedUsageKeys, setExpandedUsageKeys] = useState<Key[]>([])
   const [expandedPackageKeys, setExpandedPackageKeys] = useState<Key[]>([])
+  const [usagePoolGroup, setUsagePoolGroup] = useState<PoolGroup>()
+  const [usageRowPoolGroups, setUsageRowPoolGroups] = useState<Record<number, PoolGroup | undefined>>({})
+  const [packagePoolGroup, setPackagePoolGroup] = useState<PoolGroup>()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string>()
 
@@ -163,8 +299,9 @@ export function PublicComparePage() {
     }
   }, [])
 
-  const usageGroups = groupUsageByBestPlan(usage)
-  const packageGroups = groupPackagesByBestPlan(packages)
+  const filteredPackages = packagePoolGroup ? packages.filter((item) => item.poolGroup === packagePoolGroup) : packages
+  const usageGroups = buildUsageSiteRows(usage, usagePoolGroup, usageRowPoolGroups)
+  const packageGroups = groupPackagesByBestPlan(filteredPackages)
   const bestUsage = usageGroups[0]
   const bestPackage = packageGroups[0]
 
@@ -172,13 +309,33 @@ export function PublicComparePage() {
     setter(keys.includes(key) ? keys.filter((item) => item !== key) : [...keys, key])
   }
 
-  const usageDetailColumns: ColumnsType<RechargePlan> = [
-    { title: '充值人民币', dataIndex: 'cnyAmount', render: (v) => `￥${money(v, 2)}` },
+  const changeUsageRowPoolGroup = (siteId: number, poolGroup: PoolGroup) => {
+    setUsageRowPoolGroups((value) => ({ ...value, [siteId]: poolGroup }))
+  }
+
+  const usageDetailColumns: ColumnsType<UsagePlanOption> = [
+    {
+      title: '充值人民币',
+      dataIndex: 'cnyAmount',
+      sorter: (a, b) => a.cnyAmount - b.cnyAmount,
+      render: (v) => `￥${money(v, 2)}`,
+    },
     { title: '兑换美元', dataIndex: 'usdCredit', render: (v) => `$${money(v, 2)}` },
-    { title: '倍率', dataIndex: 'multiplier', render: (v) => `${money(v, 4)}x` },
+    {
+      title: '倍率',
+      dataIndex: 'multiplier',
+      sorter: (a, b) => a.multiplier - b.multiplier,
+      render: (v) => `${money(v, 4)}x`,
+    },
     { title: '有效额度', dataIndex: 'effectiveUsd', render: (v) => `$${money(v, 2)}` },
     { title: '有效期', dataIndex: 'expireDays', render: expireText },
-    { title: '元 / $1', dataIndex: 'cnyPerUsd', render: (v) => <strong className="price">{cost(v)}</strong> },
+    {
+      title: '元 / $1',
+      dataIndex: 'cnyPerUsd',
+      sorter: compareUsagePlan,
+      defaultSortOrder: 'ascend',
+      render: (v) => <strong className="price">{cost(v)}</strong>,
+    },
   ]
 
   const packageDetailColumns: ColumnsType<PackagePlan> = [
@@ -187,6 +344,11 @@ export function PublicComparePage() {
     { title: '时限', dataIndex: 'durationDays', render: packageDurationText },
     { title: '日均价格', dataIndex: 'dailyPrice', render: (v) => `￥${money(v, 2)}` },
     { title: '倍率', dataIndex: 'multiplier', render: (v) => `${money(v, 4)}x` },
+    {
+      title: '号池分组',
+      dataIndex: 'poolGroupText',
+      render: (v, row) => <Tag color={poolGroupColor(row.poolGroup)}>{v}</Tag>,
+    },
     { title: '采用口径', dataIndex: 'bestQuotaTypeText', render: (v) => v ?? '-' },
     { title: '日均有效额度', dataIndex: 'dailyEffectiveUsd', render: (v) => `$${money(v, 2)}` },
     { title: '元 / $1 / 天', dataIndex: 'cnyPerUsdPerDay', render: (v) => <strong className="price">{cost(v)}</strong> },
@@ -206,14 +368,50 @@ export function PublicComparePage() {
           <a href={row.siteUrl} target="_blank" rel="noreferrer">
             {name}
           </a>
-          <span>最低按量方案</span>
+          <span>最低按量充值套餐</span>
           {index === 0 && <Tag color="green">按量最低</Tag>}
         </div>
       ),
     },
-    { title: '充值人民币', dataIndex: 'cnyAmount', render: (v) => `￥${money(v, 2)}` },
+    {
+      title: '充值人民币',
+      dataIndex: 'cnyAmount',
+      sorter: (a, b) => a.cnyAmount - b.cnyAmount,
+      render: (v) => `￥${money(v, 2)}`,
+    },
     { title: '兑换美元', dataIndex: 'usdCredit', render: (v) => `$${money(v, 2)}` },
-    { title: '倍率', dataIndex: 'multiplier', render: (v) => `${money(v, 4)}x` },
+    {
+      title: '倍率',
+      dataIndex: 'multiplier',
+      sorter: (a, b) => a.multiplier - b.multiplier,
+      render: (v) => `${money(v, 4)}x`,
+    },
+    {
+      title: '号池分组',
+      dataIndex: 'selectedPoolGroup',
+      render: (_, row) => {
+        const options = (usagePoolGroup ? [usagePoolGroup] : row.availablePoolGroups).map((value) => ({
+          value,
+          label: poolGroupText(value),
+        }))
+        if (options.length <= 1) {
+          return <Tag color={poolGroupColor(row.selectedPoolGroup)}>{poolGroupText(row.selectedPoolGroup)}</Tag>
+        }
+
+        return (
+          <Select
+            className="pool-row-select"
+            size="small"
+            value={row.selectedPoolGroup}
+            options={options}
+            disabled={Boolean(usagePoolGroup)}
+            popupMatchSelectWidth={false}
+            onChange={(value) => changeUsageRowPoolGroup(row.siteId, value)}
+            style={{ width: 76 }}
+          />
+        )
+      },
+    },
     { title: '有效额度', dataIndex: 'effectiveUsd', render: (v) => `$${money(v, 2)}` },
     { title: '有效期', dataIndex: 'expireDays', render: expireText },
     { title: '方案数', dataIndex: 'planCount', render: (v) => `${v} 条` },
@@ -261,6 +459,11 @@ export function PublicComparePage() {
     { title: '时限', dataIndex: 'durationDays', render: packageDurationText },
     { title: '日均价格', dataIndex: 'dailyPrice', render: (v) => `￥${money(v, 2)}` },
     { title: '倍率', dataIndex: 'multiplier', render: (v) => `${money(v, 4)}x` },
+    {
+      title: '号池分组',
+      dataIndex: 'poolGroupText',
+      render: (v, row) => <Tag color={poolGroupColor(row.poolGroup)}>{v}</Tag>,
+    },
     { title: '采用口径', dataIndex: 'bestQuotaTypeText', render: (v) => v ?? '-' },
     { title: '日均有效额度', dataIndex: 'dailyEffectiveUsd', render: (v) => `$${money(v, 2)}` },
     { title: '套餐数', dataIndex: 'planCount', render: (v) => `${v} 条` },
@@ -301,7 +504,7 @@ export function PublicComparePage() {
           <div className="hero-copy">
             <p className="eyebrow">Codex Relay Price Radar</p>
             <h1>把中转站价格换算到同一个单位。</h1>
-            <p>每个中转站默认只展示最低成本方案，点击展开后可查看该站全部按量或套餐明细。</p>
+            <p>按量默认展示每个中转站当前号池下最低充值套餐，点击展开后可查看该站全部充值套餐。</p>
             <a href="#compare" className="hero-action">
               查看排行 <ArrowRightOutlined />
             </a>
@@ -347,7 +550,7 @@ export function PublicComparePage() {
         <div className="section-title">
           <p className="eyebrow">Comparison</p>
           <h2>价格比较</h2>
-          <p>主列表按中转站最低成本排序，展开后查看该站所有方案。</p>
+          <p>主列表按中转站当前号池下最低成本排序，展开后查看该站全部充值套餐。</p>
         </div>
         {error && <Alert type="error" message={error} showIcon />}
         {loading ? (
@@ -359,15 +562,26 @@ export function PublicComparePage() {
               {
                 key: 'usage',
                 label: '按量比较',
-                children: usageGroups.length ? (
+                children: usage.length ? (
                   <>
                     <div className="formula-note">
                       <div>
                         <span>按量计算方式</span>
                         <strong>有效额度 = 兑换美元 / 倍率</strong>
-                        <p>最终成本 = 充值人民币 / 有效额度，主列表按每个中转站最低“元 / $1”排序。</p>
+                        <p>最终成本 = 充值人民币 / 有效额度，主列表按每个中转站当前号池下最低“元 / $1”排序。</p>
                       </div>
                       <FormulaExamples examples={usageFormulaExamples} />
+                    </div>
+                    <div className="compare-toolbar">
+                      <span>号池分组</span>
+                      <Select
+                        allowClear
+                        placeholder="全部"
+                        value={usagePoolGroup}
+                        onChange={setUsagePoolGroup}
+                        options={poolGroupFilterOptions}
+                        style={{ width: 180 }}
+                      />
                     </div>
                     <Table
                       rowKey="siteId"
@@ -381,13 +595,14 @@ export function PublicComparePage() {
                         expandIcon: () => null,
                         expandedRowRender: (row) => (
                           <div className="expanded-plans">
-                            <p>该中转站全部按量方案，已按元 / $1 从低到高排序。</p>
+                            <p>该中转站当前号池下全部充值套餐，已按元 / $1 从低到高排序。</p>
                             <Table
                               rowKey="id"
                               size="small"
                               columns={usageDetailColumns}
                               dataSource={row.allPlans}
                               pagination={false}
+                              scroll={{ x: 1040 }}
                             />
                           </div>
                         ),
@@ -401,7 +616,7 @@ export function PublicComparePage() {
               {
                 key: 'package',
                 label: '套餐比较',
-                children: packageGroups.length ? (
+                children: packages.length ? (
                   <>
                     <div className="formula-note">
                       <div>
@@ -410,6 +625,17 @@ export function PublicComparePage() {
                         <p>日限额直接按天算；周限额除以 7；月限额除以 30；套餐总额度除以套餐天数，再统一除以倍率。</p>
                       </div>
                       <FormulaExamples examples={packageFormulaExamples} />
+                    </div>
+                    <div className="compare-toolbar">
+                      <span>号池分组</span>
+                      <Select
+                        allowClear
+                        placeholder="全部"
+                        value={packagePoolGroup}
+                        onChange={setPackagePoolGroup}
+                        options={poolGroupFilterOptions}
+                        style={{ width: 180 }}
+                      />
                     </div>
                     <Table
                       rowKey="siteId"
@@ -430,6 +656,7 @@ export function PublicComparePage() {
                               columns={packageDetailColumns}
                               dataSource={row.allPlans}
                               pagination={false}
+                              scroll={{ x: 1120 }}
                             />
                           </div>
                         ),

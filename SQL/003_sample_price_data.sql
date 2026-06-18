@@ -8,13 +8,8 @@ SET @site_id = LAST_INSERT_ID();
 INSERT INTO `recharge_plans` (`site_id`, `cny_amount`, `usd_credit`, `multiplier`, `expire_days`, `is_enabled`)
 VALUES (@site_id, 10.000000, 130.000000, 0.130000, 0, 1);
 
-SET @recharge_id = LAST_INSERT_ID();
-
-INSERT INTO `recharge_rate_rules` (`recharge_plan_id`, `multiplier`, `pool_group`, `is_enabled`)
-VALUES (@recharge_id, 0.130000, 4, 1);
-
-INSERT INTO `package_plans` (`site_id`, `name`, `price_cny`, `duration_days`, `multiplier`, `pool_group`, `is_enabled`)
-VALUES (@site_id, '周卡总额度示例', 28.000000, 7, 1.000000, 4, 1);
+INSERT INTO `package_plans` (`site_id`, `name`, `price_cny`, `duration_days`, `multiplier`, `is_enabled`)
+VALUES (@site_id, '周卡总额度示例', 28.000000, 7, 1.000000, 1);
 
 SET @package_id = LAST_INSERT_ID();
 

@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS `recharge_plans` (
   `site_id` BIGINT NOT NULL,
   `cny_amount` DECIMAL(18, 6) NOT NULL,
   `usd_credit` DECIMAL(18, 6) NOT NULL,
-  `multiplier` DECIMAL(18, 6) NOT NULL DEFAULT 1.000000 COMMENT '历史兼容字段，新版本使用 recharge_rate_rules',
+  `multiplier` DECIMAL(18, 6) NOT NULL DEFAULT 1.000000,
   `expire_days` INT NOT NULL DEFAULT 0 COMMENT '0=永不过期',
   `is_enabled` TINYINT(1) NOT NULL DEFAULT 1,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -47,22 +47,6 @@ CREATE TABLE IF NOT EXISTS `recharge_plans` (
   CONSTRAINT `fk_recharge_plans_site` FOREIGN KEY (`site_id`) REFERENCES `sites` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE IF NOT EXISTS `recharge_rate_rules` (
-  `id` BIGINT NOT NULL AUTO_INCREMENT,
-  `recharge_plan_id` BIGINT NOT NULL,
-  `multiplier` DECIMAL(18, 6) NOT NULL DEFAULT 1.000000,
-  `pool_group` INT NOT NULL DEFAULT 4 COMMENT '1=Pro, 2=Plus, 3=Team, 4=未知',
-  `is_enabled` TINYINT(1) NOT NULL DEFAULT 1,
-  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `deleted_at` DATETIME NULL,
-  PRIMARY KEY (`id`),
-  KEY `idx_recharge_rate_rules_plan` (`recharge_plan_id`),
-  KEY `idx_recharge_rate_rules_pool_group` (`pool_group`),
-  KEY `idx_recharge_rate_rules_deleted_enabled` (`deleted_at`, `is_enabled`),
-  CONSTRAINT `fk_recharge_rate_rules_plan` FOREIGN KEY (`recharge_plan_id`) REFERENCES `recharge_plans` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
 CREATE TABLE IF NOT EXISTS `package_plans` (
   `id` BIGINT NOT NULL AUTO_INCREMENT,
   `site_id` BIGINT NOT NULL,
@@ -70,14 +54,12 @@ CREATE TABLE IF NOT EXISTS `package_plans` (
   `price_cny` DECIMAL(18, 6) NOT NULL,
   `duration_days` INT NOT NULL,
   `multiplier` DECIMAL(18, 6) NOT NULL DEFAULT 1.000000,
-  `pool_group` INT NOT NULL DEFAULT 4 COMMENT '1=Pro, 2=Plus, 3=Team, 4=未知',
   `is_enabled` TINYINT(1) NOT NULL DEFAULT 1,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `deleted_at` DATETIME NULL,
   PRIMARY KEY (`id`),
   KEY `idx_package_plans_site` (`site_id`),
-  KEY `idx_package_plans_pool_group` (`pool_group`),
   KEY `idx_package_plans_deleted_enabled` (`deleted_at`, `is_enabled`),
   CONSTRAINT `fk_package_plans_site` FOREIGN KEY (`site_id`) REFERENCES `sites` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

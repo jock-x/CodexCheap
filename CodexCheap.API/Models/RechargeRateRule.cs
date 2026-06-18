@@ -15,7 +15,7 @@ public class RechargeRateRule
     public decimal Multiplier { get; set; } = 1m;
 
     [Column(Name = "pool_group")]
-    public int PoolGroupValue { get; set; } = (int)PoolGroup.Unknown;
+    public int PoolGroupValue { get; set; } = (int)PoolGroup.Plus;
 
     [Column(IsIgnore = true)]
     public PoolGroup PoolGroup

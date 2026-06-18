@@ -46,7 +46,7 @@ public class AdminRechargePlansController(IFreeSql db, IPricingService pricingSe
         var planRepo = uow.GetRepository<RechargePlan>();
         var rateRepo = uow.GetRepository<RechargeRateRule>();
         var now = DateTime.Now;
-        var enabledRates = request.Rates.Where(x => x.IsEnabled).ToList();
+        var enabledRates = request.Rates.Where(x => x.IsEnabled).OrderBy(x => x.Multiplier).ToList();
         var plan = new RechargePlan
         {
             SiteId = request.SiteId,
@@ -87,7 +87,7 @@ public class AdminRechargePlansController(IFreeSql db, IPricingService pricingSe
 
         using var uow = db.CreateUnitOfWork();
         var now = DateTime.Now;
-        var enabledRates = request.Rates.Where(x => x.IsEnabled).ToList();
+        var enabledRates = request.Rates.Where(x => x.IsEnabled).OrderBy(x => x.Multiplier).ToList();
         plan.SiteId = request.SiteId;
         plan.CnyAmount = request.CnyAmount;
         plan.UsdCredit = request.UsdCredit;
@@ -97,10 +97,8 @@ public class AdminRechargePlansController(IFreeSql db, IPricingService pricingSe
         plan.UpdatedAt = now;
         await uow.Orm.Update<RechargePlan>().SetSource(plan).ExecuteAffrowsAsync();
 
-        await uow.Orm.Update<RechargeRateRule>()
-            .Set(x => x.DeletedAt, now)
-            .Set(x => x.UpdatedAt, now)
-            .Where(x => x.RechargePlanId == id && x.DeletedAt == null)
+        await uow.Orm.Delete<RechargeRateRule>()
+            .Where(x => x.RechargePlanId == id)
             .ExecuteAffrowsAsync();
 
         var rates = request.Rates.Select(x => new RechargeRateRule
@@ -149,6 +147,7 @@ public class AdminRechargePlansController(IFreeSql db, IPricingService pricingSe
         if (rates.Count == 0) return FailMessage<RechargePlanDto>("至少需要一条倍率明细", StatusCodes.Status400BadRequest);
         if (rates.Any(x => x.Multiplier <= 0)) return FailMessage<RechargePlanDto>("倍率必须大于 0", StatusCodes.Status400BadRequest);
         if (rates.Any(x => !Enum.IsDefined(x.PoolGroup))) return FailMessage<RechargePlanDto>("号池分组不正确", StatusCodes.Status400BadRequest);
+        if (rates.GroupBy(x => x.PoolGroup).Any(x => x.Count() > 1)) return FailMessage<RechargePlanDto>("同一按量套餐不能重复选择号池分组", StatusCodes.Status400BadRequest);
         if (rates.All(x => !x.IsEnabled)) return FailMessage<RechargePlanDto>("至少需要启用一条倍率明细", StatusCodes.Status400BadRequest);
         return null;
     }

@@ -29,11 +29,11 @@ public class PricingService : IPricingService
             ?? new RechargeRateRule
             {
                 Multiplier = plan.Multiplier > 0 ? plan.Multiplier : 1m,
-                PoolGroup = PoolGroup.Unknown,
+                PoolGroup = PoolGroup.Plus,
                 IsEnabled = true
             };
 
-        var dto = ToRechargeDto(plan, bestRate, site, validRates.Select(ToRateDto).ToList());
+        var dto = ToRechargeDto(plan, bestRate, site, validRates.Select(rate => ToRateDto(plan, rate)).ToList());
         return dto with { RateId = bestRate.Id > 0 ? bestRate.Id : null };
     }
 
@@ -131,9 +131,11 @@ public class PricingService : IPricingService
             plan.UpdatedAt);
     }
 
-    private static RechargeRateRuleDto ToRateDto(RechargeRateRule rate)
+    private static RechargeRateRuleDto ToRateDto(RechargePlan plan, RechargeRateRule rate)
     {
-        return new RechargeRateRuleDto(rate.Id, rate.Multiplier, rate.PoolGroup, rate.PoolGroup.ToText(), rate.IsEnabled);
+        var effectiveUsd = SafeRound(plan.UsdCredit / rate.Multiplier, 6);
+        var cnyPerUsd = SafeRound(plan.CnyAmount / effectiveUsd, 6);
+        return new RechargeRateRuleDto(rate.Id, rate.Multiplier, rate.PoolGroup, rate.PoolGroup.ToText(), rate.IsEnabled, effectiveUsd, cnyPerUsd);
     }
 
     private static decimal CalculateRechargeCost(RechargePlan plan, RechargeRateRule rate)

@@ -5,6 +5,8 @@ import type {
   PackagePlan,
   PackageQuotaRule,
   RechargePlan,
+  RechargeRateRule,
+  PoolGroup,
   Site,
   SiteSupportType,
 } from '../types'
@@ -52,9 +54,9 @@ export type SaveRechargePayload = {
   siteId: number
   cnyAmount: number
   usdCredit: number
-  multiplier: number
   expireDays: number
   isEnabled: boolean
+  rates: RechargeRateRule[]
 }
 
 export type SavePackagePayload = {
@@ -63,6 +65,7 @@ export type SavePackagePayload = {
   priceCny: number
   durationDays: number
   multiplier: number
+  poolGroup: PoolGroup
   isEnabled: boolean
   quotaRules: PackageQuotaRule[]
 }

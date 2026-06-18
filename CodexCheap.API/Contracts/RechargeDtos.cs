@@ -7,7 +7,9 @@ public record RechargeRateRuleDto(
     decimal Multiplier,
     PoolGroup PoolGroup,
     string PoolGroupText,
-    bool IsEnabled);
+    bool IsEnabled,
+    decimal EffectiveUsd,
+    decimal CnyPerUsd);
 
 public record RechargePlanDto(
     long Id,

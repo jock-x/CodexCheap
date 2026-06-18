@@ -32,8 +32,8 @@ public class PublicController(IFreeSql db, IPricingService pricingService) : Bas
 
         var result = plans
             .Where(x => siteMap.ContainsKey(x.SiteId))
-            .SelectMany(x => rateMap.GetValueOrDefault(x.Id, new List<RechargeRateRule>())
-                .Select(rate => pricingService.ToRechargeDto(x, rate, siteMap[x.SiteId])))
+            .Select(x => pricingService.ToRechargeDto(x, siteMap[x.SiteId], rateMap.GetValueOrDefault(x.Id, new List<RechargeRateRule>())))
+            .Where(x => x.Rates.Count > 0)
             .OrderBy(x => x.CnyPerUsd)
             .ThenBy(x => x.CnyAmount)
             .ToList();

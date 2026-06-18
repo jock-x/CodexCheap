@@ -12,13 +12,13 @@ import {
   Input,
   InputNumber,
   Layout,
+  Menu,
   Modal,
   Popconfirm,
   Select,
   Space,
   Switch,
   Table,
-  Tabs,
   Tag,
   Typography,
   message,
@@ -29,10 +29,20 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiClient, type SavePackagePayload, type SaveRechargePayload, type SaveSitePayload } from '../services/api'
 import { clearSession, getUserName } from '../services/auth'
-import { PackageQuotaType, SiteSupportType, type PackagePlan, type RechargePlan, type Site } from '../types'
+import {
+  PackageQuotaType,
+  PoolGroup,
+  SiteSupportType,
+  type PackagePlan,
+  type RechargePlan,
+  type RechargeRateRule,
+  type Site,
+} from '../types'
 import { cost, expireText, money, packageDurationText } from '../utils/format'
 
-const { Header, Content } = Layout
+const { Header, Content, Sider } = Layout
+
+type AdminMenuKey = 'sites' | 'recharges' | 'packages'
 
 const supportOptions = [
   { value: SiteSupportType.Usage, label: '按量' },
@@ -47,7 +57,50 @@ const quotaOptions = [
   { value: PackageQuotaType.Total, label: '套餐总额度' },
 ]
 
+const poolGroupOptions = [
+  { value: PoolGroup.Pro, label: 'Pro' },
+  { value: PoolGroup.Plus, label: 'Plus' },
+  { value: PoolGroup.Team, label: 'Team' },
+  { value: PoolGroup.Unknown, label: '未知' },
+]
+
+function supportsUsage(site: Site) {
+  return site.supportType === SiteSupportType.Usage || site.supportType === SiteSupportType.UsageAndPackage
+}
+
+function supportsPackage(site: Site) {
+  return site.supportType === SiteSupportType.Package || site.supportType === SiteSupportType.UsageAndPackage
+}
+
+function poolGroupText(poolGroup: PoolGroup) {
+  return poolGroupOptions.find((item) => item.value === poolGroup)?.label ?? '未知'
+}
+
+function poolGroupColor(poolGroup: PoolGroup) {
+  if (poolGroup === PoolGroup.Pro) return 'green'
+  if (poolGroup === PoolGroup.Plus) return 'blue'
+  if (poolGroup === PoolGroup.Team) return 'gold'
+  return 'default'
+}
+
+function rateTags(row: RechargePlan) {
+  const rates: RechargeRateRule[] = row.rates?.length
+    ? row.rates
+    : [{ multiplier: row.multiplier, poolGroup: row.poolGroup ?? PoolGroup.Plus, isEnabled: row.isEnabled }]
+
+  return (
+    <Space wrap size={[6, 6]}>
+      {rates.map((rate, index) => (
+        <Tag key={`${rate.id ?? index}-${rate.poolGroup}-${rate.multiplier}`} color={poolGroupColor(rate.poolGroup)}>
+          {rate.poolGroupText ?? poolGroupText(rate.poolGroup)} · {money(rate.multiplier, 4)}x{rate.isEnabled ? '' : '（停用）'}
+        </Tag>
+      ))}
+    </Space>
+  )
+}
+
 export function AdminPage() {
+  const [activeMenu, setActiveMenu] = useState<AdminMenuKey>('sites')
   const [sites, setSites] = useState<Site[]>([])
   const [recharges, setRecharges] = useState<RechargePlan[]>([])
   const [packages, setPackages] = useState<PackagePlan[]>([])
@@ -61,6 +114,17 @@ export function AdminPage() {
   const [rechargeForm] = Form.useForm<SaveRechargePayload>()
   const [packageForm] = Form.useForm<SavePackagePayload>()
   const navigate = useNavigate()
+
+  const usageSites = sites.filter(supportsUsage)
+  const packageSites = sites.filter(supportsPackage)
+  const usageSiteOptions = usageSites.map((site) => ({ value: site.id, label: site.name }))
+  const packageSiteOptions = packageSites.map((site) => ({ value: site.id, label: site.name }))
+
+  const nextRatePoolGroup = () => {
+    const rates = (rechargeForm.getFieldValue('rates') ?? []) as RechargeRateRule[]
+    const used = new Set(rates.map((rate) => rate?.poolGroup).filter(Boolean))
+    return poolGroupOptions.find((option) => !used.has(option.value))?.value ?? PoolGroup.Plus
+  }
 
   const loadAll = async () => {
     setLoading(true)
@@ -102,11 +166,26 @@ export function AdminPage() {
   const openRechargeModal = (item?: RechargePlan) => {
     setRechargeModal({ open: true, item })
     rechargeForm.setFieldsValue(
-      item ?? {
-        multiplier: 1,
-        expireDays: 0,
-        isEnabled: true,
-      },
+      item
+        ? {
+            siteId: item.siteId,
+            cnyAmount: item.cnyAmount,
+            usdCredit: item.usdCredit,
+            expireDays: item.expireDays,
+            isEnabled: item.isEnabled,
+            rates: item.rates?.length
+              ? item.rates.map((rate) => ({
+                  multiplier: rate.multiplier,
+                  poolGroup: rate.poolGroup,
+                  isEnabled: rate.isEnabled ?? true,
+                }))
+              : [{ multiplier: item.multiplier, poolGroup: item.poolGroup ?? PoolGroup.Plus, isEnabled: true }],
+          }
+        : {
+            expireDays: 0,
+            isEnabled: true,
+            rates: [{ multiplier: 1, poolGroup: PoolGroup.Plus, isEnabled: true }],
+          },
     )
   }
 
@@ -116,11 +195,13 @@ export function AdminPage() {
       item
         ? {
             ...item,
+            poolGroup: item.poolGroup ?? PoolGroup.Plus,
             quotaRules: item.quotaRules.map((rule) => ({ ...rule, isEnabled: rule.isEnabled ?? true })),
           }
         : {
             durationDays: 7,
             multiplier: 1,
+            poolGroup: PoolGroup.Plus,
             isEnabled: true,
             quotaRules: [{ quotaType: PackageQuotaType.Total, amountUsd: 300, isEnabled: true }],
           },
@@ -188,10 +269,10 @@ export function AdminPage() {
     { title: '中转站', dataIndex: 'siteName' },
     { title: '充值', dataIndex: 'cnyAmount', render: (v) => `￥${money(v, 2)}` },
     { title: '兑换', dataIndex: 'usdCredit', render: (v) => `$${money(v, 2)}` },
-    { title: '倍率', dataIndex: 'multiplier', render: (v) => `${money(v, 4)}x` },
-    { title: '有效额度', dataIndex: 'effectiveUsd', render: (v) => `$${money(v, 2)}` },
+    { title: '倍率/号池', dataIndex: 'rates', render: (_, row) => rateTags(row) },
+    { title: '最低有效额度', dataIndex: 'effectiveUsd', render: (v) => `$${money(v, 2)}` },
     { title: '过期', dataIndex: 'expireDays', render: expireText },
-    { title: '元/$1', dataIndex: 'cnyPerUsd', render: (v) => <b>{cost(v)}</b> },
+    { title: '最低元/$1', dataIndex: 'cnyPerUsd', render: (v) => <b>{cost(v)}</b> },
     { title: '状态', dataIndex: 'isEnabled', render: (v) => (v ? <Tag color="success">启用</Tag> : <Tag>停用</Tag>) },
     {
       title: '操作',
@@ -215,6 +296,11 @@ export function AdminPage() {
     { title: '价格', dataIndex: 'priceCny', render: (v) => `￥${money(v, 2)}` },
     { title: '时限', dataIndex: 'durationDays', render: packageDurationText },
     { title: '倍率', dataIndex: 'multiplier', render: (v) => `${money(v, 4)}x` },
+    {
+      title: '号池分组',
+      dataIndex: 'poolGroupText',
+      render: (v, row) => <Tag color={poolGroupColor(row.poolGroup)}>{v}</Tag>,
+    },
     { title: '采用口径', dataIndex: 'bestQuotaTypeText', render: (v) => v ?? '-' },
     { title: '日均额度', dataIndex: 'dailyEffectiveUsd', render: (v) => `$${money(v, 2)}` },
     { title: '元/$1/天', dataIndex: 'cnyPerUsdPerDay', render: (v) => <b>{cost(v)}</b> },
@@ -235,13 +321,69 @@ export function AdminPage() {
     },
   ]
 
-  const siteFilterOptions = sites.map((site) => ({ value: site.id, label: site.name }))
   const filteredRecharges = rechargeSiteFilter
     ? recharges.filter((item) => item.siteId === rechargeSiteFilter)
     : recharges
   const filteredPackages = packageSiteFilter
     ? packages.filter((item) => item.siteId === packageSiteFilter)
     : packages
+
+  const contentTitle = activeMenu === 'sites' ? '中转站维护' : activeMenu === 'recharges' ? '按量充值维护' : '套餐维护'
+  const contentHint =
+    activeMenu === 'sites'
+      ? '维护中转站名称、地址和支持类型。'
+      : activeMenu === 'recharges'
+        ? '一条充值方案可以维护多个倍率和号池分组。'
+        : '套餐会按号池分组参与公开页筛选。'
+
+  const renderContent = () => {
+    if (activeMenu === 'sites') {
+      return (
+        <>
+          <Toolbar onAdd={() => openSiteModal()} label="新增中转站" />
+          <Table rowKey="id" loading={loading} columns={siteColumns} dataSource={sites} scroll={{ x: 900 }} />
+        </>
+      )
+    }
+
+    if (activeMenu === 'recharges') {
+      return (
+        <>
+          <Toolbar onAdd={() => openRechargeModal()} label="新增按量方案" disabled={!usageSites.length}>
+            <Select
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              placeholder="按中转站筛选"
+              value={rechargeSiteFilter}
+              onChange={setRechargeSiteFilter}
+              options={usageSiteOptions}
+              style={{ width: 220 }}
+            />
+          </Toolbar>
+          <Table rowKey="id" loading={loading} columns={rechargeColumns} dataSource={filteredRecharges} scroll={{ x: 1120 }} />
+        </>
+      )
+    }
+
+    return (
+      <>
+        <Toolbar onAdd={() => openPackageModal()} label="新增套餐" disabled={!packageSites.length}>
+          <Select
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            placeholder="按中转站筛选"
+            value={packageSiteFilter}
+            onChange={setPackageSiteFilter}
+            options={packageSiteOptions}
+            style={{ width: 220 }}
+          />
+        </Toolbar>
+        <Table rowKey="id" loading={loading} columns={packageColumns} dataSource={filteredPackages} scroll={{ x: 1240 }} />
+      </>
+    )
+  }
 
   return (
     <Layout className="admin-layout">
@@ -262,71 +404,30 @@ export function AdminPage() {
           </Button>
         </Space>
       </Header>
-      <Content className="admin-content">
-        <div className="admin-title">
-          <div>
-            <p className="eyebrow">Data Console</p>
-            <h1>价格数据维护</h1>
+      <Layout className="admin-workbench">
+        <Sider className="admin-sider" width={220}>
+          <Menu
+            mode="inline"
+            selectedKeys={[activeMenu]}
+            onClick={({ key }) => setActiveMenu(key as AdminMenuKey)}
+            items={[
+              { key: 'sites', label: '中转站' },
+              { key: 'recharges', label: '按量充值' },
+              { key: 'packages', label: '套餐' },
+            ]}
+          />
+        </Sider>
+        <Content className="admin-content">
+          <div className="admin-title">
+            <div>
+              <p className="eyebrow">Data Console</p>
+              <h1>{contentTitle}</h1>
+            </div>
+            <p>{contentHint}</p>
           </div>
-          <p>修改后公开页会立即使用最新数据重新排序。</p>
-        </div>
-        <Tabs
-          items={[
-            {
-              key: 'sites',
-              label: '中转站',
-              children: (
-                <>
-                  <Toolbar onAdd={() => openSiteModal()} label="新增中转站" />
-                  <Table rowKey="id" loading={loading} columns={siteColumns} dataSource={sites} scroll={{ x: 900 }} />
-                </>
-              ),
-            },
-            {
-              key: 'recharges',
-              label: '按量充值',
-              children: (
-                <>
-                  <Toolbar onAdd={() => openRechargeModal()} label="新增按量方案" disabled={!sites.length}>
-                    <Select
-                      allowClear
-                      showSearch
-                      optionFilterProp="label"
-                      placeholder="按中转站筛选"
-                      value={rechargeSiteFilter}
-                      onChange={setRechargeSiteFilter}
-                      options={siteFilterOptions}
-                      style={{ width: 220 }}
-                    />
-                  </Toolbar>
-                  <Table rowKey="id" loading={loading} columns={rechargeColumns} dataSource={filteredRecharges} scroll={{ x: 1000 }} />
-                </>
-              ),
-            },
-            {
-              key: 'packages',
-              label: '套餐',
-              children: (
-                <>
-                  <Toolbar onAdd={() => openPackageModal()} label="新增套餐" disabled={!sites.length}>
-                    <Select
-                      allowClear
-                      showSearch
-                      optionFilterProp="label"
-                      placeholder="按中转站筛选"
-                      value={packageSiteFilter}
-                      onChange={setPackageSiteFilter}
-                      options={siteFilterOptions}
-                      style={{ width: 220 }}
-                    />
-                  </Toolbar>
-                  <Table rowKey="id" loading={loading} columns={packageColumns} dataSource={filteredPackages} scroll={{ x: 1100 }} />
-                </>
-              ),
-            },
-          ]}
-        />
-      </Content>
+          {renderContent()}
+        </Content>
+      </Layout>
 
       <Modal title={siteModal.item ? '编辑中转站' : '新增中转站'} open={siteModal.open} onOk={saveSite} onCancel={() => setSiteModal({ open: false })} destroyOnHidden>
         <Form form={siteForm} layout="vertical">
@@ -348,10 +449,10 @@ export function AdminPage() {
         </Form>
       </Modal>
 
-      <Modal title={rechargeModal.item ? '编辑按量方案' : '新增按量方案'} open={rechargeModal.open} onOk={saveRecharge} onCancel={() => setRechargeModal({ open: false })} destroyOnHidden>
+      <Modal title={rechargeModal.item ? '编辑按量方案' : '新增按量方案'} open={rechargeModal.open} onOk={saveRecharge} onCancel={() => setRechargeModal({ open: false })} width={780} destroyOnHidden>
         <Form form={rechargeForm} layout="vertical">
           <Form.Item name="siteId" label="中转站" rules={[{ required: true }]}>
-            <Select options={sites.map((site) => ({ value: site.id, label: site.name }))} />
+            <Select showSearch optionFilterProp="label" options={usageSiteOptions} />
           </Form.Item>
           <Form.Item name="cnyAmount" label="充值人民币" rules={[{ required: true }]}>
             <InputNumber min={0.000001} precision={6} addonBefore="￥" style={{ width: '100%' }} />
@@ -359,37 +460,68 @@ export function AdminPage() {
           <Form.Item name="usdCredit" label="兑换美元" rules={[{ required: true }]}>
             <InputNumber min={0.000001} precision={6} addonBefore="$" style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item name="multiplier" label="倍率" rules={[{ required: true }]}>
-            <InputNumber min={0.000001} precision={6} addonAfter="x" style={{ width: '100%' }} />
-          </Form.Item>
           <Form.Item name="expireDays" label="过期天数">
             <InputNumber min={0} precision={0} addonAfter="天，0 表示永不过期" style={{ width: '100%' }} />
           </Form.Item>
+          <Form.List name="rates">
+            {(fields, { add, remove }) => (
+              <div className="quota-list">
+                <div className="quota-header">
+                  <Typography.Text strong>倍率明细</Typography.Text>
+                  <Button
+                    size="small"
+                    icon={<PlusOutlined />}
+                    disabled={fields.length >= poolGroupOptions.length}
+                    onClick={() => add({ multiplier: 1, poolGroup: nextRatePoolGroup(), isEnabled: true })}
+                  >
+                    新增倍率
+                  </Button>
+                </div>
+                {fields.map((field) => (
+                  <Space key={field.key} align="start" className="quota-row">
+                    <Form.Item name={[field.name, 'multiplier']} rules={[{ required: true }]}>
+                      <InputNumber min={0.000001} precision={6} addonAfter="x" style={{ width: 190 }} />
+                    </Form.Item>
+                    <Form.Item name={[field.name, 'poolGroup']} rules={[{ required: true }]}>
+                      <Select options={poolGroupOptions} style={{ width: 150 }} />
+                    </Form.Item>
+                    <Form.Item name={[field.name, 'isEnabled']} valuePropName="checked">
+                      <Switch checkedChildren="启用" unCheckedChildren="停用" />
+                    </Form.Item>
+                    <Button danger icon={<DeleteOutlined />} disabled={fields.length === 1} onClick={() => remove(field.name)} />
+                  </Space>
+                ))}
+              </div>
+            )}
+          </Form.List>
           <Form.Item name="isEnabled" label="启用" valuePropName="checked">
             <Switch />
           </Form.Item>
         </Form>
       </Modal>
 
-      <Modal title={packageModal.item ? '编辑套餐' : '新增套餐'} open={packageModal.open} onOk={savePackage} onCancel={() => setPackageModal({ open: false })} width={760} destroyOnHidden>
+      <Modal title={packageModal.item ? '编辑套餐' : '新增套餐'} open={packageModal.open} onOk={savePackage} onCancel={() => setPackageModal({ open: false })} width={820} destroyOnHidden>
         <Form form={packageForm} layout="vertical">
           <Form.Item name="siteId" label="中转站" rules={[{ required: true }]}>
-            <Select options={sites.map((site) => ({ value: site.id, label: site.name }))} />
+            <Select showSearch optionFilterProp="label" options={packageSiteOptions} />
           </Form.Item>
           <Form.Item name="name" label="套餐名称" rules={[{ required: true }]}>
             <Input placeholder="例如：周卡、月卡、三天套餐" />
           </Form.Item>
-          <Space.Compact block>
-            <Form.Item name="priceCny" label="套餐价格" rules={[{ required: true }]} style={{ width: '33%' }}>
+          <div className="package-fields-grid">
+            <Form.Item name="priceCny" label="套餐价格" rules={[{ required: true }]}>
               <InputNumber min={0.000001} precision={6} addonBefore="￥" style={{ width: '100%' }} />
             </Form.Item>
-            <Form.Item name="durationDays" label="套餐时限" rules={[{ required: true }]} style={{ width: '33%' }}>
+            <Form.Item name="durationDays" label="套餐时限" rules={[{ required: true }]}>
               <InputNumber min={1} precision={0} addonAfter="天" style={{ width: '100%' }} />
             </Form.Item>
-            <Form.Item name="multiplier" label="倍率" rules={[{ required: true }]} style={{ width: '34%' }}>
+            <Form.Item name="multiplier" label="倍率" rules={[{ required: true }]}>
               <InputNumber min={0.000001} precision={6} addonAfter="x" style={{ width: '100%' }} />
             </Form.Item>
-          </Space.Compact>
+            <Form.Item name="poolGroup" label="号池分组" rules={[{ required: true }]}>
+              <Select options={poolGroupOptions} />
+            </Form.Item>
+          </div>
           <Form.List name="quotaRules">
             {(fields, { add, remove }) => (
               <div className="quota-list">
@@ -442,7 +574,7 @@ function Toolbar({
         {label}
       </Button>
       {children}
-      {disabled && <Typography.Text type="secondary">请先新增中转站</Typography.Text>}
+      {disabled && <Typography.Text type="secondary">请先新增支持该类型的中转站</Typography.Text>}
     </div>
   )
 }
