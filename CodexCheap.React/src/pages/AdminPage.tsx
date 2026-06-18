@@ -199,7 +199,7 @@ export function AdminPage() {
             quotaRules: item.quotaRules.map((rule) => ({ ...rule, isEnabled: rule.isEnabled ?? true })),
           }
         : {
-            durationDays: 7,
+            durationDays: 30,
             multiplier: 1,
             poolGroup: PoolGroup.Plus,
             isEnabled: true,

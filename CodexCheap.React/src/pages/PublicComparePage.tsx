@@ -1,10 +1,10 @@
 import { ArrowRightOutlined, LoginOutlined, RiseOutlined } from '@ant-design/icons'
-import { Alert, Button, Empty, Select, Skeleton, Table, Tabs, Tag } from 'antd'
+import { Alert, Button, Empty, Modal, Select, Skeleton, Table, Tabs, Tag } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useEffect, useState, type Key } from 'react'
 import { Link } from 'react-router-dom'
 import { apiClient } from '../services/api'
-import { PoolGroup, type PackagePlan, type RechargePlan, type RechargeRateRule } from '../types'
+import { PoolGroup, type PackagePlan, type PackageQuotaRule, type RechargePlan, type RechargeRateRule } from '../types'
 import { cost, expireText, money, packageDurationText } from '../utils/format'
 
 type UsagePlanOption = RechargePlan & {
@@ -33,43 +33,15 @@ type FormulaExample = {
 
 const usageFormulaExamples: FormulaExample[] = [
   {
-    title: '低倍率充值',
-    input: '10 元换 130 美元，倍率 0.13x',
-    formula: '130 ÷ 0.13 = 1000 美元有效额度',
-    result: '0.0100 元 / $1',
-    tag: '经典案例',
-  },
-  {
     title: '等额兑换',
     input: '3.5 元换 3.5 美元，倍率 1x',
     formula: '3.5 ÷ 1 = 3.5 美元有效额度',
     result: '1.0000 元 / $1',
     tag: '直观基准',
   },
-  {
-    title: '大额充值包',
-    input: '50 元换 300 美元，倍率 1x',
-    formula: '300 ÷ 1 = 300 美元有效额度',
-    result: '0.1667 元 / $1',
-    tag: '充值包对比',
-  },
 ]
 
 const packageFormulaExamples: FormulaExample[] = [
-  {
-    title: '周卡总额度',
-    input: '28 元，7 天，总额度 300 美元，倍率 1x',
-    formula: '28 ÷ 7 = 4 元/天，300 ÷ 7 = 42.85 美元/天',
-    result: '0.0933 元 / $1 / 天',
-    tag: '经典案例',
-  },
-  {
-    title: '三天日限额',
-    input: '39.9 元，3 天，日限 60 美元，倍率 1x',
-    formula: '39.9 ÷ 3 = 13.30 元/天，日均额度 60 美元',
-    result: '0.2217 元 / $1 / 天',
-    tag: '日限额',
-  },
   {
     title: '月卡月限额',
     input: '98 元，30 天，月限 337.99 美元，倍率 1x',
@@ -272,6 +244,7 @@ export function PublicComparePage() {
   const [packages, setPackages] = useState<PackagePlan[]>([])
   const [expandedUsageKeys, setExpandedUsageKeys] = useState<Key[]>([])
   const [expandedPackageKeys, setExpandedPackageKeys] = useState<Key[]>([])
+  const [selectedPackagePlan, setSelectedPackagePlan] = useState<PackagePlan | null>(null)
   const [usagePoolGroup, setUsagePoolGroup] = useState<PoolGroup>()
   const [usageRowPoolGroups, setUsageRowPoolGroups] = useState<Record<number, PoolGroup | undefined>>({})
   const [packagePoolGroup, setPackagePoolGroup] = useState<PoolGroup>()
@@ -313,6 +286,12 @@ export function PublicComparePage() {
     setUsageRowPoolGroups((value) => ({ ...value, [siteId]: poolGroup }))
   }
 
+  const packageQuotaColumns: ColumnsType<PackageQuotaRule> = [
+    { title: '额度类型', dataIndex: 'quotaTypeText' },
+    { title: '美元额度', dataIndex: 'amountUsd', render: (v) => `$${money(v, 2)}` },
+    { title: '状态', dataIndex: 'isEnabled', render: (v) => (v ? <Tag color="success">启用</Tag> : <Tag>停用</Tag>) },
+  ]
+
   const usageDetailColumns: ColumnsType<UsagePlanOption> = [
     {
       title: '充值人民币',
@@ -339,7 +318,15 @@ export function PublicComparePage() {
   ]
 
   const packageDetailColumns: ColumnsType<PackagePlan> = [
-    { title: '套餐', dataIndex: 'name' },
+    {
+      title: '套餐',
+      dataIndex: 'name',
+      render: (v, row) => (
+        <Button type="link" size="small" className="package-quota-trigger" onClick={() => setSelectedPackagePlan(row)}>
+          {v}
+        </Button>
+      ),
+    },
     { title: '价格', dataIndex: 'priceCny', render: (v) => `￥${money(v, 2)}` },
     { title: '时限', dataIndex: 'durationDays', render: packageDurationText },
     { title: '日均价格', dataIndex: 'dailyPrice', render: (v) => `￥${money(v, 2)}` },
@@ -440,11 +427,12 @@ export function PublicComparePage() {
   const packageColumns: ColumnsType<PackageGroup> = [
     {
       title: '排名',
-      width: 76,
+      width: 58,
       render: (_, __, index) => <span className={index === 0 ? 'rank best' : 'rank'}>{index + 1}</span>,
     },
     {
       title: '中转站',
+      width: 170,
       render: (_, row, index) => (
         <div className="site-cell">
           <a href={row.siteUrl} target="_blank" rel="noreferrer">
@@ -455,29 +443,30 @@ export function PublicComparePage() {
         </div>
       ),
     },
-    { title: '价格', dataIndex: 'priceCny', render: (v) => `￥${money(v, 2)}` },
-    { title: '时限', dataIndex: 'durationDays', render: packageDurationText },
-    { title: '日均价格', dataIndex: 'dailyPrice', render: (v) => `￥${money(v, 2)}` },
-    { title: '倍率', dataIndex: 'multiplier', render: (v) => `${money(v, 4)}x` },
+    { title: '价格', dataIndex: 'priceCny', width: 76, render: (v) => `￥${money(v, 2)}` },
+    { title: '时限', dataIndex: 'durationDays', width: 68, render: packageDurationText },
+    { title: '日均价格', dataIndex: 'dailyPrice', width: 82, render: (v) => `￥${money(v, 2)}` },
+    { title: '倍率', dataIndex: 'multiplier', width: 64, render: (v) => `${money(v, 4)}x` },
     {
       title: '号池分组',
+      width: 78,
       dataIndex: 'poolGroupText',
       render: (v, row) => <Tag color={poolGroupColor(row.poolGroup)}>{v}</Tag>,
     },
-    { title: '采用口径', dataIndex: 'bestQuotaTypeText', render: (v) => v ?? '-' },
-    { title: '日均有效额度', dataIndex: 'dailyEffectiveUsd', render: (v) => `$${money(v, 2)}` },
-    { title: '套餐数', dataIndex: 'planCount', render: (v) => `${v} 条` },
+    { title: '采用口径', dataIndex: 'bestQuotaTypeText', width: 80, render: (v) => v ?? '-' },
+    { title: '日均有效额度', dataIndex: 'dailyEffectiveUsd', width: 96, render: (v) => `$${money(v, 2)}` },
+    { title: '套餐数', dataIndex: 'planCount', width: 62, render: (v) => `${v} 条` },
     {
-      title: '元 / $1 / 天',
+      title: <span className="nowrap-col">元 / $1 / 天</span>,
       dataIndex: 'cnyPerUsdPerDay',
+      width: 118,
       sorter: (a, b) => (a.cnyPerUsdPerDay ?? 999999) - (b.cnyPerUsdPerDay ?? 999999),
       defaultSortOrder: 'ascend',
       render: (v, _, index) => <strong className={index === 0 ? 'price best-price' : 'price'}>{cost(v)}</strong>,
     },
     {
       title: '全部套餐',
-      fixed: 'right',
-      width: 120,
+      width: 92,
       render: (_, row) => {
         const expanded = expandedPackageKeys.includes(row.siteId)
         return (
@@ -641,8 +630,8 @@ export function PublicComparePage() {
                       rowKey="siteId"
                       columns={packageColumns}
                       dataSource={packageGroups}
+                      tableLayout="fixed"
                       pagination={false}
-                      scroll={{ x: 1220 }}
                       expandable={{
                         expandedRowKeys: expandedPackageKeys,
                         onExpandedRowsChange: (keys) => setExpandedPackageKeys([...keys]),
@@ -671,6 +660,27 @@ export function PublicComparePage() {
           />
         )}
       </section>
+
+      <Modal
+        title={selectedPackagePlan ? `${selectedPackagePlan.siteName} · ${selectedPackagePlan.name} 套餐额度` : '套餐额度'}
+        open={Boolean(selectedPackagePlan)}
+        onCancel={() => setSelectedPackagePlan(null)}
+        footer={null}
+        destroyOnHidden
+        width={720}
+      >
+        {selectedPackagePlan?.quotaRules?.length ? (
+          <Table
+            rowKey={(rule) => `${rule.id ?? rule.quotaType}`}
+            columns={packageQuotaColumns}
+            dataSource={[...selectedPackagePlan.quotaRules].sort((a, b) => a.quotaType - b.quotaType)}
+            pagination={false}
+            size="small"
+          />
+        ) : (
+          <Empty description="暂无套餐额度" />
+        )}
+      </Modal>
     </main>
   )
 }

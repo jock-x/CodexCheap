@@ -290,6 +290,11 @@ a {
   font-weight: 800;
 }
 
+.nowrap-col,
+.price {
+  white-space: nowrap;
+}
+
 .rank.best {
   background: var(--accent);
   color: #fff;
@@ -464,6 +469,12 @@ a {
 
 .pool-row-select .ant-select-arrow {
   inset-inline-end: 8px;
+}
+
+.package-quota-trigger {
+  height: auto;
+  padding: 0;
+  font-weight: 700;
 }
 
 .expanded-plans {
