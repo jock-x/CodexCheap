@@ -1,8 +1,7 @@
-import { ArrowRightOutlined, LoginOutlined, RiseOutlined } from '@ant-design/icons'
+import { ArrowRightOutlined, RiseOutlined } from '@ant-design/icons'
 import { Alert, Button, Empty, Modal, Select, Skeleton, Table, Tabs, Tag } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useEffect, useState, type Key } from 'react'
-import { Link } from 'react-router-dom'
 import { apiClient } from '../services/api'
 import { PoolGroup, type PackagePlan, type PackageQuotaRule, type RechargePlan, type RechargeRateRule } from '../types'
 import { cost, expireText, money, packageDurationText } from '../utils/format'
@@ -483,11 +482,6 @@ export function PublicComparePage() {
       <section className="hero-section">
         <nav className="topbar">
           <span className="brand-mark">CodexCheap</span>
-          <Link to="/admin/login">
-            <Button type="text" icon={<LoginOutlined />}>
-              后台登录
-            </Button>
-          </Link>
         </nav>
         <div className="hero-grid">
           <div className="hero-copy">

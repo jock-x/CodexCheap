@@ -86,16 +86,12 @@ SQL/004_add_pool_groups_and_recharge_rates.sql
 
 ### 2. 配置后端
 
-`CodexCheap.API/appsettings.json` 只保留可提交的占位示例。请通过环境变量提供真实 MySQL 连接串和 JWT 密钥，不要把数据库密码或密钥写入会提交的配置文件。
-
 PowerShell 示例：
 
 ```powershell
 $env:ConnectionStrings__Default="server=<db-host>;port=3306;uid=<db-user>;pwd=<db-password>;database=codexcheap;charset=utf8mb4;TreatTinyAsBoolean=true;Allow User Variables=True"
 $env:Jwt__Secret="<replace-with-a-random-secret-at-least-32-characters>"
 ```
-
-公开仓库中的 `SQL/002_seed_admin.example.sql` 仅作为管理员初始化模板。复制为本地的 `SQL/002_seed_admin.sql` 并替换用户名和密码哈希后再执行；真实脚本已被 `.gitignore` 忽略。
 
 启动后端：
 
