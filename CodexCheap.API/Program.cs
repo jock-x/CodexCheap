@@ -7,6 +7,11 @@ using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
+static bool LooksLikePlaceholder(string value)
+{
+    return value.Contains('<') || value.Contains('>');
+}
+
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -31,6 +36,10 @@ builder.Services.AddSingleton<IFreeSql>(_ =>
     {
         throw new InvalidOperationException("ConnectionStrings:Default is missing.");
     }
+    if (LooksLikePlaceholder(connectionString))
+    {
+        throw new InvalidOperationException("ConnectionStrings:Default must be provided by environment variable before starting the API.");
+    }
 
     return new FreeSqlBuilder()
         .UseConnectionString(DataType.MySql, connectionString)
@@ -44,6 +53,10 @@ builder.Services.AddScoped<IPricingService, PricingService>();
 
 var jwtSection = builder.Configuration.GetSection("Jwt");
 var jwtSecret = jwtSection["Secret"] ?? throw new InvalidOperationException("Jwt:Secret is missing.");
+if (LooksLikePlaceholder(jwtSecret))
+{
+    throw new InvalidOperationException("Jwt:Secret must be provided by environment variable before starting the API.");
+}
 var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret));
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)

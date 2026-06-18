@@ -28,7 +28,7 @@ CodexCheap 的目标不是做完整导航站，而是做一个可维护、可计
 - 套餐比较：按套餐日均成本比较，支持查看套餐额度明细。
 - 后台维护：维护中转站、按量充值套餐、倍率号池、套餐和套餐额度。
 - 单管理员登录：仅后台需要登录，游客页面不需要账号。
-- MySQL 初始化脚本：数据库结构、初始管理员和示例数据放在 `SQL/` 目录。
+- MySQL 初始化脚本：数据库结构和示例数据放在 `SQL/` 目录；管理员账号按部署环境单独初始化。
 
 ## 价格计算方式
 
@@ -86,17 +86,16 @@ SQL/004_add_pool_groups_and_recharge_rates.sql
 
 ### 2. 配置后端
 
-修改 `CodexCheap.API/appsettings.json` 中的 MySQL 连接串：
+`CodexCheap.API/appsettings.json` 只保留可提交的占位示例。请通过环境变量提供真实 MySQL 连接串和 JWT 密钥，不要把数据库密码或密钥写入会提交的配置文件。
 
-```json
-{
-  "ConnectionStrings": {
-    "Default": "server=127.0.0.1;port=3306;uid=root;pwd=123456;database=codexcheap;charset=utf8mb4;TreatTinyAsBoolean=true;Allow User Variables=True"
-  }
-}
+PowerShell 示例：
+
+```powershell
+$env:ConnectionStrings__Default="server=<db-host>;port=3306;uid=<db-user>;pwd=<db-password>;database=codexcheap;charset=utf8mb4;TreatTinyAsBoolean=true;Allow User Variables=True"
+$env:Jwt__Secret="<replace-with-a-random-secret-at-least-32-characters>"
 ```
 
-部署前请同时修改 `Jwt:Secret`，不要使用默认密钥。
+公开仓库中的 `SQL/002_seed_admin.example.sql` 仅作为管理员初始化模板。复制为本地的 `SQL/002_seed_admin.sql` 并替换用户名和密码哈希后再执行；真实脚本已被 `.gitignore` 忽略。
 
 启动后端：
 

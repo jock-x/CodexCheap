@@ -2,3 +2,13 @@
 /CodexCheap.API/bin
 /CodexCheap.API/obj
 /publish
+
+# Local secrets and machine-specific files
+.env
+.env.*
+*.local
+*.user
+*.csproj.user
+appsettings.Local.json
+appsettings.*.Local.json
+SQL/002_seed_admin.sql
