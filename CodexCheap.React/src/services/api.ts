@@ -13,7 +13,7 @@ import type {
 import { clearSession, getToken } from './auth'
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5130',
+  baseURL: import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.DEV ? 'http://localhost:5130' : ''),
 })
 
 api.interceptors.request.use((config) => {
