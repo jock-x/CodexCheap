@@ -12,12 +12,18 @@ namespace CodexCheap.API.Controllers;
 public class PublicController(IFreeSql db, IPricingService pricingService) : BaseApiController
 {
     [HttpGet("usage-comparisons")]
-    public async Task<ActionResult<MessageModel<IReadOnlyList<RechargePlanDto>>>> UsageComparisons()
+    public async Task<ActionResult<MessageModel<IReadOnlyList<RechargePlanDto>>>> UsageComparisons([FromQuery] PoolGroup? poolGroup)
     {
+        if (poolGroup.HasValue && !Enum.IsDefined(poolGroup.Value))
+        {
+            return FailMessage<IReadOnlyList<RechargePlanDto>>("号池分组不正确", StatusCodes.Status400BadRequest);
+        }
+
         var sites = await db.Select<Site>()
             .Where(x => x.DeletedAt == null && x.IsEnabled)
             .ToListAsync();
         var siteMap = sites.Where(x => x.SupportType.SupportsUsage()).ToDictionary(x => x.Id);
+        var requestedPoolGroup = poolGroup;
 
         var plans = await db.Select<RechargePlan>()
             .Where(x => x.DeletedAt == null && x.IsEnabled && x.CnyAmount > 0 && x.UsdCredit > 0)
@@ -27,6 +33,7 @@ public class PublicController(IFreeSql db, IPricingService pricingService) : Bas
             ? new List<RechargeRateRule>()
             : await db.Select<RechargeRateRule>()
                 .Where(x => planIds.Contains(x.RechargePlanId) && x.DeletedAt == null && x.IsEnabled && x.Multiplier > 0)
+                .WhereIf(requestedPoolGroup.HasValue, x => x.PoolGroupValue == (int)requestedPoolGroup!.Value)
                 .ToListAsync();
         var rateMap = rates.GroupBy(x => x.RechargePlanId).ToDictionary(x => x.Key, x => x.ToList());
 
@@ -42,15 +49,22 @@ public class PublicController(IFreeSql db, IPricingService pricingService) : Bas
     }
 
     [HttpGet("package-comparisons")]
-    public async Task<ActionResult<MessageModel<IReadOnlyList<PackagePlanDto>>>> PackageComparisons()
+    public async Task<ActionResult<MessageModel<IReadOnlyList<PackagePlanDto>>>> PackageComparisons([FromQuery] PoolGroup? poolGroup)
     {
+        if (poolGroup.HasValue && !Enum.IsDefined(poolGroup.Value))
+        {
+            return FailMessage<IReadOnlyList<PackagePlanDto>>("号池分组不正确", StatusCodes.Status400BadRequest);
+        }
+
         var sites = await db.Select<Site>()
             .Where(x => x.DeletedAt == null && x.IsEnabled)
             .ToListAsync();
         var siteMap = sites.Where(x => x.SupportType.SupportsPackage()).ToDictionary(x => x.Id);
+        var requestedPoolGroup = poolGroup;
 
         var plans = await db.Select<PackagePlan>()
             .Where(x => x.DeletedAt == null && x.IsEnabled && x.PriceCny > 0 && x.DurationDays > 0 && x.Multiplier > 0)
+            .WhereIf(requestedPoolGroup.HasValue, x => x.PoolGroupValue == (int)requestedPoolGroup!.Value)
             .ToListAsync();
         var planIds = plans.Select(x => x.Id).ToArray();
         var rules = planIds.Length == 0

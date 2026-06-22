@@ -9,6 +9,7 @@ import { cost, expireText, money, packageDurationText } from '../utils/format'
 type UsagePlanOption = RechargePlan & {
   selectedRate: RechargeRateRule
   selectedPoolGroup: PoolGroup
+  detailKey: string
 }
 
 type UsageGroup = UsagePlanOption & {
@@ -137,7 +138,7 @@ function usageRatesForPlan(plan: RechargePlan) {
     .sort(compareUsageRate)
 }
 
-function toUsagePlanOption(plan: RechargePlan, selectedRate: RechargeRateRule): UsagePlanOption {
+function toUsagePlanOption(plan: RechargePlan, selectedRate: RechargeRateRule, index = 0): UsagePlanOption {
   return {
     ...plan,
     rateId: selectedRate.id,
@@ -148,6 +149,7 @@ function toUsagePlanOption(plan: RechargePlan, selectedRate: RechargeRateRule): 
     cnyPerUsd: selectedRate.cnyPerUsd ?? plan.cnyPerUsd,
     selectedRate,
     selectedPoolGroup: selectedRate.poolGroup,
+    detailKey: `${plan.id}-${selectedRate.id ?? `${selectedRate.poolGroup}-${selectedRate.multiplier}-${index}`}`,
   }
 }
 
@@ -158,6 +160,16 @@ function usagePlanOptionsForPool(plans: RechargePlan[], poolGroup: PoolGroup) {
       return rate ? toUsagePlanOption(plan, rate) : undefined
     })
     .filter((item): item is UsagePlanOption => Boolean(item))
+    .sort(compareUsagePlan)
+}
+
+function usagePlanOptionsForAllGroups(plans: RechargePlan[]) {
+  return plans
+    .flatMap((plan) =>
+      usageRatesForPlan(plan)
+        .filter((rate) => rate.isEnabled)
+        .map((rate, index) => toUsagePlanOption(plan, rate, index)),
+    )
     .sort(compareUsagePlan)
 }
 
@@ -175,23 +187,31 @@ function buildUsageSiteRows(
   items: RechargePlan[],
   topPoolGroup?: PoolGroup,
   rowPoolGroups: Record<number, PoolGroup | undefined> = {},
+  detailItems: RechargePlan[] = items,
 ): UsageGroup[] {
   const map = new Map<number, RechargePlan[]>()
   items.forEach((item) => {
     map.set(item.siteId, [...(map.get(item.siteId) ?? []), item])
   })
+  const detailMap = new Map<number, RechargePlan[]>()
+  detailItems.forEach((item) => {
+    detailMap.set(item.siteId, [...(detailMap.get(item.siteId) ?? []), item])
+  })
 
   return Array.from(map.values())
     .map((plans) => {
-      const availablePoolGroups = usagePoolGroupsForPlans(plans)
-      const requestedPoolGroup = topPoolGroup ?? rowPoolGroups[plans[0].siteId]
+      const siteId = plans[0].siteId
+      const detailPlans = detailMap.get(siteId) ?? plans
+      const availablePoolGroups = usagePoolGroupsForPlans(detailPlans)
+      const allPlans = usagePlanOptionsForAllGroups(detailPlans)
+      const requestedPoolGroup = topPoolGroup ?? rowPoolGroups[siteId]
       const selectedPoolGroup = requestedPoolGroup && availablePoolGroups.includes(requestedPoolGroup)
         ? requestedPoolGroup
         : undefined
 
       if (selectedPoolGroup) {
-        const allPlans = usagePlanOptionsForPool(plans, selectedPoolGroup)
-        const best = allPlans[0]
+        const selectedPlans = usagePlanOptionsForPool(plans, selectedPoolGroup)
+        const best = selectedPlans[0]
         return best
           ? {
               ...best,
@@ -211,7 +231,6 @@ function buildUsageSiteRows(
       const best = candidates[0]
       if (!best) return undefined
 
-      const allPlans = usagePlanOptionsForPool(plans, best.poolGroup)
       return {
         ...best,
         allPlans,
@@ -224,30 +243,40 @@ function buildUsageSiteRows(
     .sort(compareUsagePlan)
 }
 
-function groupPackagesByBestPlan(items: PackagePlan[]): PackageGroup[] {
+function groupPackagesByBestPlan(items: PackagePlan[], detailItems: PackagePlan[] = items): PackageGroup[] {
   const map = new Map<number, PackagePlan[]>()
   items.forEach((item) => {
     map.set(item.siteId, [...(map.get(item.siteId) ?? []), item])
+  })
+  const detailMap = new Map<number, PackagePlan[]>()
+  detailItems.forEach((item) => {
+    detailMap.set(item.siteId, [...(detailMap.get(item.siteId) ?? []), item])
   })
 
   return Array.from(map.values())
     .map((plans) => {
       const sorted = [...plans].sort((a, b) => (a.cnyPerUsdPerDay ?? 999999) - (b.cnyPerUsdPerDay ?? 999999))
-      return { ...sorted[0], allPlans: sorted, planCount: sorted.length }
+      const allPlans = [...(detailMap.get(plans[0].siteId) ?? plans)]
+        .sort((a, b) => (a.cnyPerUsdPerDay ?? 999999) - (b.cnyPerUsdPerDay ?? 999999))
+      return { ...sorted[0], allPlans, planCount: allPlans.length }
     })
     .sort((a, b) => (a.cnyPerUsdPerDay ?? 999999) - (b.cnyPerUsdPerDay ?? 999999))
 }
 
 export function PublicComparePage() {
-  const [usage, setUsage] = useState<RechargePlan[]>([])
-  const [packages, setPackages] = useState<PackagePlan[]>([])
+  const [allUsage, setAllUsage] = useState<RechargePlan[]>([])
+  const [filteredUsage, setFilteredUsage] = useState<RechargePlan[]>([])
+  const [allPackages, setAllPackages] = useState<PackagePlan[]>([])
+  const [filteredPackages, setFilteredPackages] = useState<PackagePlan[]>([])
   const [expandedUsageKeys, setExpandedUsageKeys] = useState<Key[]>([])
   const [expandedPackageKeys, setExpandedPackageKeys] = useState<Key[]>([])
   const [selectedPackagePlan, setSelectedPackagePlan] = useState<PackagePlan | null>(null)
   const [usagePoolGroup, setUsagePoolGroup] = useState<PoolGroup>()
   const [usageRowPoolGroups, setUsageRowPoolGroups] = useState<Record<number, PoolGroup | undefined>>({})
   const [packagePoolGroup, setPackagePoolGroup] = useState<PoolGroup>()
-  const [loading, setLoading] = useState(true)
+  const [initialLoading, setInitialLoading] = useState(true)
+  const [usageFilterLoading, setUsageFilterLoading] = useState(false)
+  const [packageFilterLoading, setPackageFilterLoading] = useState(false)
   const [error, setError] = useState<string>()
 
   useEffect(() => {
@@ -256,13 +285,14 @@ export function PublicComparePage() {
       try {
         const [usageData, packageData] = await Promise.all([apiClient.publicUsage(), apiClient.publicPackages()])
         if (mounted) {
-          setUsage(usageData)
-          setPackages(packageData)
+          setAllUsage(usageData)
+          setAllPackages(packageData)
+          setError(undefined)
         }
       } catch (err) {
         if (mounted) setError(err instanceof Error ? err.message : '加载失败')
       } finally {
-        if (mounted) setLoading(false)
+        if (mounted) setInitialLoading(false)
       }
     }
     load()
@@ -271,9 +301,70 @@ export function PublicComparePage() {
     }
   }, [])
 
-  const filteredPackages = packagePoolGroup ? packages.filter((item) => item.poolGroup === packagePoolGroup) : packages
-  const usageGroups = buildUsageSiteRows(usage, usagePoolGroup, usageRowPoolGroups)
-  const packageGroups = groupPackagesByBestPlan(filteredPackages)
+  useEffect(() => {
+    if (usagePoolGroup === undefined) {
+      return
+    }
+
+    let mounted = true
+    const timer = window.setTimeout(() => {
+      setUsageFilterLoading(true)
+      apiClient.publicUsage(usagePoolGroup)
+        .then((usageData) => {
+          if (mounted) {
+            setFilteredUsage(usageData)
+            setError(undefined)
+          }
+        })
+        .catch((err) => {
+          if (mounted) setError(err instanceof Error ? err.message : '加载失败')
+        })
+        .finally(() => {
+          if (mounted) setUsageFilterLoading(false)
+        })
+    }, 0)
+
+    return () => {
+      mounted = false
+      window.clearTimeout(timer)
+    }
+  }, [usagePoolGroup])
+
+  useEffect(() => {
+    if (packagePoolGroup === undefined) {
+      return
+    }
+
+    let mounted = true
+    const timer = window.setTimeout(() => {
+      setPackageFilterLoading(true)
+      apiClient.publicPackages(packagePoolGroup)
+        .then((packageData) => {
+          if (mounted) {
+            setFilteredPackages(packageData)
+            setError(undefined)
+          }
+        })
+        .catch((err) => {
+          if (mounted) setError(err instanceof Error ? err.message : '加载失败')
+        })
+        .finally(() => {
+          if (mounted) setPackageFilterLoading(false)
+        })
+    }, 0)
+
+    return () => {
+      mounted = false
+      window.clearTimeout(timer)
+    }
+  }, [packagePoolGroup])
+
+  const usage = usagePoolGroup === undefined ? allUsage : filteredUsage
+  const packages = packagePoolGroup === undefined ? allPackages : filteredPackages
+  const usageGroups = buildUsageSiteRows(usage, usagePoolGroup, usageRowPoolGroups, allUsage)
+  const packageGroups = groupPackagesByBestPlan(packages, allPackages)
+  const usageEmptyDescription = usagePoolGroup ? '当前号池分组暂无按量数据' : '暂无按量数据'
+  const packageEmptyDescription = packagePoolGroup ? '当前号池分组暂无套餐数据' : '暂无套餐数据'
   const bestUsage = usageGroups[0]
   const bestPackage = packageGroups[0]
 
@@ -304,6 +395,11 @@ export function PublicComparePage() {
       dataIndex: 'multiplier',
       sorter: (a, b) => a.multiplier - b.multiplier,
       render: (v) => `${money(v, 4)}x`,
+    },
+    {
+      title: '号池分组',
+      dataIndex: 'selectedPoolGroup',
+      render: (_, row) => <Tag color={poolGroupColor(row.selectedPoolGroup)}>{poolGroupText(row.selectedPoolGroup)}</Tag>,
     },
     { title: '有效额度', dataIndex: 'effectiveUsd', render: (v) => `$${money(v, 2)}` },
     { title: '有效期', dataIndex: 'expireDays', render: expireText },
@@ -536,7 +632,7 @@ export function PublicComparePage() {
           <p>主列表按中转站当前号池下最低成本排序，展开后查看该站全部充值套餐。</p>
         </div>
         {error && <Alert type="error" message={error} showIcon />}
-        {loading ? (
+        {initialLoading ? (
           <Skeleton active paragraph={{ rows: 8 }} />
         ) : (
           <Tabs
@@ -545,7 +641,7 @@ export function PublicComparePage() {
               {
                 key: 'usage',
                 label: '按量比较',
-                children: usage.length ? (
+                children: (
                   <>
                     <div className="formula-note">
                       <div>
@@ -566,40 +662,43 @@ export function PublicComparePage() {
                         style={{ width: 180 }}
                       />
                     </div>
-                    <Table
-                      rowKey="siteId"
-                      columns={usageColumns}
-                      dataSource={usageGroups}
-                      pagination={false}
-                      scroll={{ x: 1120 }}
-                      expandable={{
-                        expandedRowKeys: expandedUsageKeys,
-                        onExpandedRowsChange: (keys) => setExpandedUsageKeys([...keys]),
-                        expandIcon: () => null,
-                        expandedRowRender: (row) => (
-                          <div className="expanded-plans">
-                            <p>该中转站当前号池下全部充值套餐，已按元 / $1 从低到高排序。</p>
-                            <Table
-                              rowKey="id"
-                              size="small"
-                              columns={usageDetailColumns}
-                              dataSource={row.allPlans}
-                              pagination={false}
-                              scroll={{ x: 1040 }}
-                            />
-                          </div>
-                        ),
-                      }}
-                    />
+                    {usageFilterLoading || usageGroups.length ? (
+                      <Table
+                        rowKey="siteId"
+                        columns={usageColumns}
+                        dataSource={usageGroups}
+                        loading={usageFilterLoading}
+                        pagination={false}
+                        scroll={{ x: 1120 }}
+                        expandable={{
+                          expandedRowKeys: expandedUsageKeys,
+                          onExpandedRowsChange: (keys) => setExpandedUsageKeys([...keys]),
+                          expandIcon: () => null,
+                          expandedRowRender: (row) => (
+                            <div className="expanded-plans">
+                              <p>该中转站全部号池分组的充值套餐，已按元 / $1 从低到高排序。</p>
+                              <Table
+                                rowKey="detailKey"
+                                size="small"
+                                columns={usageDetailColumns}
+                                dataSource={row.allPlans}
+                                pagination={false}
+                                scroll={{ x: 1120 }}
+                              />
+                            </div>
+                          ),
+                        }}
+                      />
+                    ) : (
+                      <Empty description={usageEmptyDescription} />
+                    )}
                   </>
-                ) : (
-                  <Empty description="暂无按量数据" />
                 ),
               },
               {
                 key: 'package',
                 label: '套餐比较',
-                children: packages.length ? (
+                children: (
                   <>
                     <div className="formula-note">
                       <div>
@@ -620,34 +719,37 @@ export function PublicComparePage() {
                         style={{ width: 180 }}
                       />
                     </div>
-                    <Table
-                      rowKey="siteId"
-                      columns={packageColumns}
-                      dataSource={packageGroups}
-                      tableLayout="fixed"
-                      pagination={false}
-                      expandable={{
-                        expandedRowKeys: expandedPackageKeys,
-                        onExpandedRowsChange: (keys) => setExpandedPackageKeys([...keys]),
-                        expandIcon: () => null,
-                        expandedRowRender: (row) => (
-                          <div className="expanded-plans">
-                            <p>该中转站全部套餐，已按元 / $1 / 天从低到高排序。</p>
-                            <Table
-                              rowKey="id"
-                              size="small"
-                              columns={packageDetailColumns}
-                              dataSource={row.allPlans}
-                              pagination={false}
-                              scroll={{ x: 1120 }}
-                            />
-                          </div>
-                        ),
-                      }}
-                    />
+                    {packageFilterLoading || packageGroups.length ? (
+                      <Table
+                        rowKey="siteId"
+                        columns={packageColumns}
+                        dataSource={packageGroups}
+                        loading={packageFilterLoading}
+                        tableLayout="fixed"
+                        pagination={false}
+                        expandable={{
+                          expandedRowKeys: expandedPackageKeys,
+                          onExpandedRowsChange: (keys) => setExpandedPackageKeys([...keys]),
+                          expandIcon: () => null,
+                          expandedRowRender: (row) => (
+                            <div className="expanded-plans">
+                              <p>该中转站全部套餐，已按元 / $1 / 天从低到高排序。</p>
+                              <Table
+                                rowKey="id"
+                                size="small"
+                                columns={packageDetailColumns}
+                                dataSource={row.allPlans}
+                                pagination={false}
+                                scroll={{ x: 1120 }}
+                              />
+                            </div>
+                          ),
+                        }}
+                      />
+                    ) : (
+                      <Empty description={packageEmptyDescription} />
+                    )}
                   </>
-                ) : (
-                  <Empty description="暂无套餐数据" />
                 ),
               },
             ]}

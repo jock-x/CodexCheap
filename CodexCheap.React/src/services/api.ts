@@ -73,8 +73,18 @@ export type SavePackagePayload = {
 export const apiClient = {
   login: (userName: string, password: string) =>
     unwrap<LoginResponse>(api.post('/api/auth/login', { userName, password })),
-  publicUsage: () => unwrap<RechargePlan[]>(api.get('/api/public/usage-comparisons')),
-  publicPackages: () => unwrap<PackagePlan[]>(api.get('/api/public/package-comparisons')),
+  publicUsage: (poolGroup?: PoolGroup) =>
+    unwrap<RechargePlan[]>(
+      api.get('/api/public/usage-comparisons', {
+        params: poolGroup === undefined ? undefined : { poolGroup },
+      }),
+    ),
+  publicPackages: (poolGroup?: PoolGroup) =>
+    unwrap<PackagePlan[]>(
+      api.get('/api/public/package-comparisons', {
+        params: poolGroup === undefined ? undefined : { poolGroup },
+      }),
+    ),
   sites: () => unwrap<Site[]>(api.get('/api/admin/sites')),
   createSite: (payload: SaveSitePayload) => unwrap<Site>(api.post('/api/admin/sites', payload)),
   updateSite: (id: number, payload: SaveSitePayload) => unwrap<Site>(api.put(`/api/admin/sites/${id}`, payload)),

@@ -74,7 +74,7 @@ CodexCheap 的目标不是做完整导航站，而是做一个可维护、可计
 - 认证：`JWT`
 - 前端：`React + TypeScript + Ant Design`
 - 构建工具：`Vite`
-- 初始化脚本：`SQL/001_init_schema.sql`、`SQL/003_sample_price_data.sql`、`SQL/004_add_pool_groups_and_recharge_rates.sql`
+- 初始化脚本：`SQL/001_init_schema.sql`、`SQL/003_sample_price_data.sql`、`SQL/004_add_pool_groups_and_recharge_rates.sql`、`SQL/005_allow_duplicate_recharge_rate_pool_groups.sql`
 
 ## 快速开始
 
@@ -86,9 +86,10 @@ CodexCheap 的目标不是做完整导航站，而是做一个可维护、可计
 SQL/001_init_schema.sql
 SQL/003_sample_price_data.sql
 SQL/004_add_pool_groups_and_recharge_rates.sql
+SQL/005_allow_duplicate_recharge_rate_pool_groups.sql
 ```
 
-`001` 会创建数据库和基础表，`003` 是示例价格数据，`004` 是号池分组和按量倍率明细迁移脚本。后台管理员初始化请按部署环境单独处理，不建议在公开说明中暴露默认账号或密码。
+`001` 会创建数据库和基础表，`003` 是示例价格数据，`004` 是号池分组和按量倍率明细迁移脚本，`005` 允许同一按量充值方案重复维护号池分组。后台管理员初始化请按部署环境单独处理，不建议在公开说明中暴露默认账号或密码。
 
 ### 2. 配置后端
 
@@ -97,6 +98,21 @@ PowerShell 示例：
 ```powershell
 $env:ConnectionStrings__Default="server=<db-host>;port=3306;uid=<db-user>;pwd=<db-password>;database=codexcheap;charset=utf8mb4;TreatTinyAsBoolean=true;Allow User Variables=True"
 $env:Jwt__Secret="<replace-with-a-random-secret-at-least-32-characters>"
+```
+
+`$env:` 只对当前 PowerShell 进程及其子进程生效。设置后需要在同一个 PowerShell 窗口里启动后端；如果使用 Visual Studio、Rider 或另一个终端启动，请改用系统用户环境变量，或在 `CodexCheap.API/appsettings.Local.json` 中写入本机配置。`appsettings.Local.json` 已被 git 忽略，不会提交。
+
+`appsettings.Local.json` 示例：
+
+```json
+{
+  "ConnectionStrings": {
+    "Default": "server=<db-host>;port=3306;uid=<db-user>;pwd=<db-password>;database=codexcheap;charset=utf8mb4;TreatTinyAsBoolean=true;Allow User Variables=True"
+  },
+  "Jwt": {
+    "Secret": "<replace-with-a-random-secret-at-least-32-characters>"
+  }
+}
 ```
 
 启动后端：

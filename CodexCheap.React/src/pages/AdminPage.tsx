@@ -145,7 +145,10 @@ export function AdminPage() {
   }
 
   useEffect(() => {
-    loadAll()
+    const timer = window.setTimeout(() => {
+      loadAll()
+    }, 0)
+    return () => window.clearTimeout(timer)
   }, [])
 
   const logout = () => {
@@ -333,7 +336,7 @@ export function AdminPage() {
     activeMenu === 'sites'
       ? '维护中转站名称、地址和支持类型。'
       : activeMenu === 'recharges'
-        ? '一条充值方案可以维护多个倍率和号池分组。'
+        ? '一条充值方案可以维护多个倍率和号池分组，号池分组允许重复。'
         : '套餐会按号池分组参与公开页筛选。'
 
   const renderContent = () => {
@@ -471,7 +474,6 @@ export function AdminPage() {
                   <Button
                     size="small"
                     icon={<PlusOutlined />}
-                    disabled={fields.length >= poolGroupOptions.length}
                     onClick={() => add({ multiplier: 1, poolGroup: nextRatePoolGroup(), isEnabled: true })}
                   >
                     新增倍率

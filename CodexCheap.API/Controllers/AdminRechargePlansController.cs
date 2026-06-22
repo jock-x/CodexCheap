@@ -147,7 +147,6 @@ public class AdminRechargePlansController(IFreeSql db, IPricingService pricingSe
         if (rates.Count == 0) return FailMessage<RechargePlanDto>("至少需要一条倍率明细", StatusCodes.Status400BadRequest);
         if (rates.Any(x => x.Multiplier <= 0)) return FailMessage<RechargePlanDto>("倍率必须大于 0", StatusCodes.Status400BadRequest);
         if (rates.Any(x => !Enum.IsDefined(x.PoolGroup))) return FailMessage<RechargePlanDto>("号池分组不正确", StatusCodes.Status400BadRequest);
-        if (rates.GroupBy(x => x.PoolGroup).Any(x => x.Count() > 1)) return FailMessage<RechargePlanDto>("同一按量套餐不能重复选择号池分组", StatusCodes.Status400BadRequest);
         if (rates.All(x => !x.IsEnabled)) return FailMessage<RechargePlanDto>("至少需要启用一条倍率明细", StatusCodes.Status400BadRequest);
         return null;
     }
